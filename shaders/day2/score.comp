@@ -1,0 +1,87 @@
+#version 460
+#extension GL_EXT_debug_printf : enable
+
+const int rps_score[4][4] = int[4][4](
+    int[4](0, 0, 0, 0), // not a throw
+    int[4](0, 3, 0, 6), // you throw rock
+    int[4](0, 6, 3, 0), // you throw paper
+    int[4](0, 0, 6, 3) // you throw scissors
+);
+
+const int move_from_score[4][4] = int[4][4](
+    int[4](3, 3, 3, 3), // not a thing (to offset outcome portion of the score)
+    int[4](3, 3, 1, 2), // you need to lose
+    int[4](3, 1, 2, 3), // you need to draw
+    int[4](3, 2, 3, 1) // you need to win
+);
+
+#define GROUP_SIZE 256
+
+layout(local_size_x = GROUP_SIZE) in;
+
+layout(std140, binding = 0) uniform ParamsAndOutput {
+    bool is_score;
+    int final_score;
+};
+
+layout(std430, binding = 1) buffer InputData {
+    int opponents[];
+};
+
+layout(std430, binding = 2) buffer InputData2 {
+    int ours[];
+};
+layout(std430, binding = 3) buffer OutputData {
+    int scores[];
+};
+
+shared int scratch[2][GROUP_SIZE * 2];
+
+void main() {
+
+    uint my_index = gl_GlobalInvocationID.x * 2;
+    uint my_local_index = my_index % (GROUP_SIZE * 2);
+
+    // first calculate RPS scores and store in both buffers
+    // need to calculate ours and neighbors
+    // if its score not move then calculate the move we need to throw
+    int my_score = 0;
+    int my_score_next = 0;
+
+    int us = ours[my_index];
+    int them = opponents[my_index];
+
+    int us_next = ours[my_index + 1];
+    int them_next = opponents[my_index + 1];
+
+    if (is_score) {
+        my_score = (us - 1) * 3 + move_from_score[us][them];
+        my_score_next = (us_next -1) * 3 + move_from_score[us_next][them_next];
+    } else {
+        my_score = us + rps_score[us][them];
+        my_score_next = us_next + rps_score[us_next][them_next];
+    }
+
+
+    scratch[0][my_local_index] = my_score;
+    scratch[1][my_local_index] = my_score;
+    scratch[0][my_local_index + 1] = my_score_next;
+    scratch[1][my_local_index + 1] = my_score_next;
+
+    // sum all scores
+    uint current_scratch = 0;
+    uint previous_scratch = 1;
+    for (int h = 0; h < log2(GROUP_SIZE * 2); h++ ) {
+        uint neighbor = min(GROUP_SIZE * 2 - 1, my_local_index + (1 << h));
+        scratch[current_scratch][my_local_index] = scratch[previous_scratch][my_local_index] + scratch[previous_scratch][neighbor];
+        barrier();
+        uint tmp = current_scratch;
+        current_scratch = previous_scratch;
+        previous_scratch = tmp;
+    }
+    barrier();
+
+    // should be ok since they're all writing the same value right?
+    uint score_index = gl_GlobalInvocationID.x / GROUP_SIZE;
+    scores[score_index] = scratch[previous_scratch][0];
+}
