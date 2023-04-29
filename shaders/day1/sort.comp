@@ -1,0 +1,29 @@
+#version 460
+#extension GL_EXT_debug_printf : enable
+
+layout(local_size_x = 256) in;
+
+layout(std140, binding = 0) uniform Parameters {
+    int MAX_VALUE;
+    bool odd;
+};
+
+layout(std430, binding = 1) buffer ToSort {
+    int values[];
+};
+
+// DOING BUBBLE SORT SCREW IT IM NOT SMART ENOUGH FOR BITONIC
+
+void main() {
+    //debugPrintfEXT("MAX_VALUE: %d, idx: %d, value: %d", MAX_VALUE, gl_GlobalInvocationID.x, values[gl_GlobalInvocationID.x]);
+
+    uint adjust = odd ? 1 : 0;
+    uint pos = min(gl_GlobalInvocationID.x * 2 + adjust, uint(MAX_VALUE));
+    uint neighbor = min(pos + 1, MAX_VALUE);
+    uint next_neighbor = min(pos + 2, MAX_VALUE);
+    if (values[pos] < values[neighbor]) {
+        int tmp = values[pos];
+        values[pos] = values[neighbor];
+        values[neighbor] = tmp;
+    }
+}

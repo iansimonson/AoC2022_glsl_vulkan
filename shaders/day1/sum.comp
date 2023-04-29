@@ -1,0 +1,25 @@
+#version 460
+#extension GL_EXT_debug_printf : enable
+
+
+layout(local_size_x = 256) in;
+
+layout(std140, binding = 0) uniform Parameters {
+    int N; // width of data
+};
+layout(std430, binding = 1) buffer InputData {
+    int calories[];
+};
+layout(std430, binding = 2) buffer OutputArray {
+    int total_calories[];
+};
+
+void main() {
+    int sum = 0;
+    for (int i = 0; i < N; i++) {
+        sum += calories[gl_GlobalInvocationID.x * N + i];
+    //    debugPrintfEXT("value at %d is %d:", gl_GlobalInvocationID.x * N + i, calories[gl_GlobalInvocationID.x * N + i]);
+    }
+    //debugPrintfEXT("N: %d, idx: %d, sum: %d", N, gl_GlobalInvocationID.x, sum);
+    total_calories[gl_GlobalInvocationID.x] = sum;
+}
