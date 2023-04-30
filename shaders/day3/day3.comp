@@ -1,0 +1,55 @@
+#version 460
+#extension GL_EXT_debug_printf : enable
+
+layout(local_size_x = 32) in;
+
+
+layout(std430, binding = 0) buffer InputLines {
+    int lines[];
+};
+layout(std430, binding = 1) buffer OutputPriorities {
+    int priorities[];
+};
+
+shared uint priority_counts_1[53];
+shared uint priority_counts_2[53];
+
+void main() {
+
+    uint GROUP_SIZE = gl_WorkGroupSize.x; // data size of a backpack pocket
+    uint DATA_SIZE = 2 * GROUP_SIZE; // full size of a backpack (2 pockets)
+
+    uint bag_1 = gl_WorkGroupID.x * DATA_SIZE + gl_LocalInvocationID.x;
+    uint bag_2 = bag_1 + GROUP_SIZE;
+    uint priority_idx = gl_WorkGroupID.x;
+    //debugPrintfEXT("bag1: %d, bag2: %d, priority_idx: %d", bag_1, bag_2, priority_idx);
+
+    // make sure this memory is initialized
+    priority_counts_1[gl_LocalInvocationID.x] = 0;
+    priority_counts_1[int(gl_LocalInvocationID.x * 2) % 53] = 0;
+
+    priority_counts_2[gl_LocalInvocationID.x] = 0;
+    priority_counts_2[int(gl_LocalInvocationID.x * 2) % 53] = 0;
+
+    barrier();
+
+    atomicAdd(priority_counts_1[lines[bag_1]], 1);
+    atomicAdd(priority_counts_2[lines[bag_2]], 1);
+
+    barrier();
+
+    // due to the problem statement, there is only 1 element
+    // betwen priority_counts_1 and priority_counts_2 that is
+    // non-zero in both (other than the 0 index)
+    // since we have 32 threads and 52 elements each thread
+    // checks 2 spots with some redundant work
+    uint check_idx_1 = gl_LocalInvocationID.x + 1;
+    uint check_idx_2 = (gl_LocalInvocationID.x + GROUP_SIZE) % 52 + 1;
+
+    int priority = priority_counts_1[check_idx_1] > 0 && priority_counts_2[check_idx_1] > 0 ? int(check_idx_1) : 0;
+    priority = priority_counts_1[check_idx_2] > 0 && priority_counts_2[check_idx_2] > 0 ? int(check_idx_2) : priority;
+
+    if (priority > 0) {
+        priorities[priority_idx] = priority;
+    }
+}
